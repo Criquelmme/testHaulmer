@@ -1,6 +1,6 @@
-# Payment Processor API
+  Payment Processor API
 
-API REST para procesamiento asíncrono de pagos construida con **.NET 8**, diseñada bajo principios **SOLID** y arquitectura orientada a **eventos**, con comunicación a un adquirente externo a través de **Polly** para resiliencia HTTP.
+API REST para procesamiento asíncrono de pagos construida con **.NET 8**, diseñada con arquitectura orientada a **eventos**, con comunicación a un adquirente externo a través de **Polly** para resiliencia HTTP.
 
 ## Características
 
@@ -35,72 +35,136 @@ La aplicación sigue un patrón de **procesamiento asíncrono basado en canales*
 5. `AcquirerIntegrationService` actualiza el estado de la transacción (`PROCESSING` → `APPROVED` / `DECLINED` / `FAILED`) y registra eventos.
 6. El cliente puede consultar el estado de la transacción mediante el endpoint `GET /payments/{id}`.
 
-```mermaid
-flowchart TB
-    subgraph Client["Cliente HTTP"]
-        A[POST /payments] --> B[GET /payments/{id}]
-    end
-
-    subgraph API["Payment Processor API"]
-        direction TB
-        C[PaymentController] --> D[PaymentRequestValidator]
-        C --> E[IPaymentService]
-        C --> F[IPaymentQueryService]
-        
-        E --> G{IdempotencyKey existe?}
-        G -- Sí --> H[Retornar respuesta previa]
-        G -- No --> I[Crear Transaction PENDING<br/>+ IdempotencyRecord]
-        I --> J[Commit BD]
-        J --> K[Escribir TransactionId<br/>en IPaymentChannel]
-        
-        K --> L[(In-Memory Channel<br/>System.Threading.Channels)]
-    end
-
-    subgraph Worker["Background Worker"]
-        M[PaymentWorkerService] --> N[Leer del canal]
-        N --> O[IAcquirerIntegrationService]
-    end
-
-    subgraph Acquirer["Adquirente Externo"]
-        P[POST /authorize]
-    end
-
-    O --> Q[Actualizar STATUS → PROCESSING]
-    Q --> P
-    P -- Éxito --> R[Actualizar STATUS<br/>→ APPROVED / DECLINED]
-    P -- Falla --> S[Actualizar STATUS → FAILED]
-    R --> T[Insertar TransactionEvent]
-    S --> T
-    
-    F --> U[(Azure SQL Server<br/>EF Core)]
-    I --> U
-    Q --> U
-    R --> U
-    S --> U
-
-    subgraph Monitoring["Monitoreo"]
-        V[Serilog JSON]
-    end
-
-    C -.-> V
-    O -.-> V
-    M -.-> V
-
-    classDef client fill:#e1f5fe,stroke:#0288d1
-    classDef api fill:#fff3e0,stroke:#f57c00
-    classDef worker fill:#f3e5f5,stroke:#7b1fa2
-    classDef acquirer fill:#e8f5e9,stroke:#388e3c
-    classDef storage fill:#fce4ec,stroke:#c62828
-    classDef monitoring fill:#fff8e1,stroke:#f9a825
-
-    class A,B client
-    class C,D,E,F,G,H,I,J,K,L api
-    class M,N,O worker
-    class P acquirer
-    class Q,R,S,T storage
-    class U storage
-    class V monitoring
 ```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          CLIENTE HTTP                                    │
+│  POST /payments ─────────────────────────────────────────── GET /payments│
+└────────────────────┬─────────────────────────────────────────┬───────────┘
+                     │                                         │
+                     ▼                                         │
+┌────────────────────────────────────────────────────────┐     │
+│              PAYMENT CONTROLLER                        │     │
+│  ┌───────────────────┐   ┌──────────────────────────┐  │     │
+│  │ PaymentValidator   │   │   IPaymentQueryService   │──┘     │
+│  └───────────────────┘   └──────────────────────────┘        │
+│  ┌───────────────────────────────────────────────────┐       │
+│  │              IPaymentService                      │       │
+│  │                                                   │       │
+│  │  ┌──────────┐       ┌────────────────────────┐   │       │
+│  │  │¿Idempot. │──Sí──→│ Retornar respuesta previa│   │       │
+│  │  │  existe? │       └────────────────────────┘   │       │
+│  │  │          │                                    │       │
+│  │  │   No     │                                    │       │
+│  │  │    ▼     │                                    │       │
+│  │  │ ┌──────────────────────┐                     │       │
+│  │  │ │Crear Transaction     │                     │       │
+│  │  │ │(PENDING) +           │                     │       │
+│  │  │ │IdempotencyRecord     │                     │       │
+│  │  │ └──────────┬───────────┘                     │       │
+│  │  │            ▼                                 │       │
+│  │  │ ┌──────────────────────┐                     │       │
+│  │  │ │  Commit BD           │                     │       │
+│  │  │ └──────────┬───────────┘                     │       │
+│  │  │            ▼                                 │       │
+│  │  │ ┌──────────────────────┐                     │       │
+│  │  │ │Escribir TransactionId│                     │       │
+│  │  │ │ en IPaymentChannel   │                     │       │
+│  │  │ └──────────────────────┘                     │       │
+│  └──────────────────┬────────────────────────────────┘       │
+└─────────────────────┼────────────────────────────────────────┘
+                      │
+                      ▼
+┌──────────────────────────────────────────────────┐
+│            IN-MEMORY CHANNEL                      │
+│         (System.Threading.Channels)               │
+└──────────────────────┬───────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────┐
+│           BACKGROUND WORKER                       │
+│          PaymentWorkerService                     │
+│                                                   │
+│  ┌──────────────────────────────────────────┐    │
+│  │    IAcquirerIntegrationService            │    │
+│  │                                           │    │
+│  │  ┌─────────────────────────────┐          │    │
+│  │  │ Actualizar STATUS → PROCESSING │        │    │
+│  │  └─────────────┬───────────────┘          │    │
+│  │                ▼                          │    │
+│  │  ┌─────────────────────────────┐          │    │
+│  │  │ POST /authorize (Adquirente)│          │    │
+│  │  └─────────────┬───────────────┘          │    │
+│  │                │                          │    │
+│  │     ┌──────────┴──────────┐               │    │
+│  │     ▼                     ▼               │    │
+│  │  ┌──────────┐       ┌──────────┐          │    │
+│  │  │ APROBADO │       │ RECHAZADO│          │    │
+│  │  │ APPROVED │       │ DECLINED │          │    │
+│  │  └──────────┘       └──────────┘          │    │
+│  │         │               │                 │    │
+│  │         ▼               ▼                 │    │
+│  │  ┌───────────────────────────────────┐    │    │
+│  │  │ Insertar TransactionEvent         │    │    │
+│  │  └───────────────────────────────────┘    │    │
+│  └──────────────────────────────────────────┘    │
+└──────────────────────┬───────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────┐
+│              AZURE SQL SERVER                     │
+│         (Entity Framework Core)                   │
+│                                                   │
+│  ┌──────────────┐  ┌──────────────────┐          │
+│  │ Transactions  │  │ TransactionEvents │         │
+│  ├──────────────┤  ├──────────────────┤          │
+│  │ - Id         │  │ - Id             │          │
+│  │ - MerchantId │  │ - TransactionId  │          │
+│  │ - Amount     │  │ - EventType      │          │
+│  │ - Currency   │  │ - PreviousStatus │          │
+│  │ - Status     │  │ - NewStatus      │          │
+│  │ - CreatedAt  │  │ - CreatedAt      │          │
+│  │ - UpdatedAt  │  └──────────────────┘          │
+│  └──────────────┘                                │
+│  ┌──────────────────┐                            │
+│  │ IdempotencyRecords│                           │
+│  ├──────────────────┤                            │
+│  │ - Key (PK)       │                            │
+│  │ - TransactionId  │                            │
+│  │ - ResponseBody   │                            │
+│  │ - CreatedAt      │                            │
+│  └──────────────────┘                            │
+└──────────────────────────────────────────────────┘
+
+                     ┌──────────────────────┐
+                     │     SERILOG (JSON)    │
+                     │   Logging estructurado │
+                     └──────────────────────┘
+```
+
+## Estados de Transacción
+
+```
+               ┌──────────┐
+               │  PENDING │  ← POST /payments
+               └────┬─────┘
+                    │ Worker procesa
+                    ▼
+              ┌───────────┐
+              │ PROCESSING │
+              └─────┬─────┘
+                    │
+       ┌────────────┼────────────┐
+       ▼            ▼            ▼
+ ┌──────────┐ ┌──────────┐ ┌──────────┐
+ │ APPROVED │ │ DECLINED │ │  FAILED  │
+ └──────────┘ └──────────┘ └──────────┘
+```
+
+- **PENDING**: Transacción creada, esperando ser procesada.
+- **PROCESSING**: El worker está comunicándose con el adquirente.
+- **APPROVED**: El adquirente aprobó la transacción.
+- **DECLINED**: El adquirente rechazó la transacción (por negocios o error 4xx).
+- **FAILED**: Error de comunicación con el adquirente después de reintentos.
 
 ## Endpoints de la API
 
@@ -206,31 +270,176 @@ Obtiene transacciones filtradas por comercio y opcionalmente por estado.
 }
 ```
 
-## Estados de Transacción
+## Casos de Éxito y Error
 
-```mermaid
-stateDiagram-v2
-    [*] --> Pending: POST /payments
-    Pending --> Processing: Worker procesa
-    Processing --> Approved: Adquirente aprueba
-    Processing --> Declined: Adquirente rechaza
-    Processing --> Failed: Error de comunicación
-    Approved --> [*]
-    Declined --> [*]
-    Failed --> [*]
+### `POST /payments` — Escenarios
+
+```
+Cliente envía POST /payments
+         │
+         ├── ✅ Caso exitoso (202 Accepted)
+         │    └── Pago creado como PENDING y encolado para procesamiento async
+         │
+         ├── ❌ Error 400 — Validación de campos
+         │    ├── MerchantId vacío
+         │    ├── Amount <= 0
+         │    ├── Currency inválido (no son 3 caracteres)
+         │    ├── Card.Number con menos de 13 o más de 19 dígitos, o contiene letras
+         │    ├── Card.Expiry en formato incorrecto (no coincide con MM/YYYY)
+         │    ├── Card.Expiry con fecha vencida
+         │    ├── Card.Cvv con menos de 3 o más de 4 dígitos, o contiene letras
+         │    └── IdempotencyKey vacía
+         │
+         └── ❌ Error 409 — IdempotencyKey duplicada
+              └── La misma IdempotencyKey ya fue procesada anteriormente
+                  (el servidor retorna la respuesta original)
 ```
 
-## Principios SOLID Aplicados
+**Ejemplo de respuesta error 400:**
+```json
+{
+  "errores": [
+    "MerchantId es requerido",
+    "Amount debe ser mayor que cero",
+    "Card.Number debe tener entre 13 y 19 dígitos numéricos"
+  ]
+}
+```
 
-| Principio | Aplicación |
-|---|---|
-| **SRP** (Single Responsibility) | Cada clase tiene una única responsabilidad: `PaymentService` (creación), `AcquirerIntegrationService` (integración), `PaymentWorkerService` (consumo del canal). |
-| **OCP** (Open/Closed) | Las políticas de resiliencia (Polly) se configuran desde `Program.cs` sin modificar el código de negocio. |
-| **LSP** (Liskov Substitution) | Las implementaciones concretas (`PaymentChannel`, `PaymentService`, etc.) pueden reemplazarse sin alterar los consumidores que dependen de las interfaces. |
-| **ISP** (Interface Segregation) | Interfaces pequeñas y específicas: `IPaymentService`, `IPaymentQueryService`, `IAcquirerIntegrationService`, `IPaymentChannel`, `IPaymentRepository`. |
-| **DIP** (Dependency Inversion) | Todas las dependencias apuntan a abstracciones (interfaces), no a implementaciones concretas. Registro explícito mediante DI en `Program.cs`. |
+**Ejemplo de respuesta error 409:**
+```json
+{
+  "error": "Idempotency key existe"
+}
+```
+
+### `GET /payments/{id}` — Escenarios
+
+```
+Cliente solicita GET /payments/{id}
+         │
+         ├── ✅ Caso exitoso (200 OK)
+         │    └── Transacción encontrada con detalle completo y eventos
+         │
+         └── ❌ Error 404 — Transacción no encontrada
+              ├── El ID no es un GUID válido
+              └── El GUID no existe en la base de datos
+```
+
+**Ejemplo de respuesta error 404:**
+```json
+{
+  "error": "Transaccion no encontrada"
+}
+```
+
+### `GET /payments?merchantId=...` — Escenarios
+
+```
+Cliente solicita GET /payments?merchantId=...&status=...
+         │
+         ├── ✅ Caso exitoso (200 OK) — Transacciones encontradas
+         │    ├── Filtro por merchantId solamente
+         │    ├── Filtro por merchantId + status válido (Pending/Processing/Approved/Declined/Failed)
+         │    └── Lista vacía si no hay transacciones que coincidan
+         │
+         └── ❌ Sin resultados (200 OK con lista vacía)
+              └── El merchantId no tiene transacciones, o el status no coincide con ninguna
+```
+
+### Procesamiento en Segundo Plano — Escenarios
+
+Una vez que el pago es aceptado (202), el worker procesa la transacción de forma asíncrona. Estos son los posibles resultados al consultar el estado con `GET /payments/{id}`:
+
+```
+Transacción creada como PENDING
+         │
+         ▼
+    Worker recoge del canal
+         │
+         ▼
+    ┌─────────────────┐
+    │ ✅ HAPPY PATH   │
+    └─────────────────┘
+    STATUS → PROCESSING
+         │
+    POST /authorize al adquirente (éxito)
+         │
+    STATUS → APPROVED
+         │
+    Se registra TransactionEvent (APPROVED)
+    Resultado final: ✅ APPROVED
+
+
+    ┌──────────────────────┐
+    │ ❌ DECLINED          │
+    └──────────────────────┘
+    STATUS → PROCESSING
+         │
+    POST /authorize al adquirente (responde HTTP 4xx)
+         │
+    STATUS → DECLINED
+         │
+    Se registra TransactionEvent (DECLINED_BY_ACQUIRER)
+    Resultado final: ❌ DECLINED
+
+
+    ┌──────────────────────┐
+    │ ❌ FAILED (error 5xx)│
+    └──────────────────────┘
+    STATUS → PROCESSING
+         │
+    POST /authorize al adquirente (responde HTTP 500)
+         │
+    Polly reintenta (3 veces con exponential backoff)
+         │
+    Sigue fallando → STATUS → FAILED
+         │
+    Se registra TransactionEvent (FAILED)
+    Resultado final: ❌ FAILED
+
+
+    ┌──────────────────────┐
+    │ ❌ FAILED (timeout)  │
+    └──────────────────────┘
+    STATUS → PROCESSING
+         │
+    POST /authorize al adquirente (timeout)
+         │
+    Polly reintenta (3 veces)
+         │
+    Sigue fallando → STATUS → FAILED
+         │
+    Se registra TransactionEvent (FAILED)
+    Resultado final: ❌ FAILED
+
+
+    ┌──────────────────────────────────┐
+    │ ⚠️ RECUPERACIÓN (edge case)     │
+    └──────────────────────────────────┘
+    Adquirente aprueba (HTTP 200), pero la BD falla al guardar
+         │
+    ┌─────────────────────────────────────┐
+    │ Se reintenta actualizar en nuevo    │
+    │ scope de base de datos              │
+    └─────────────────────────────────────┘
+         │
+    ├── Éxito en reintento → RECOVERED (APPROVED)
+    └── Falla en reintento → CRÍTICO (requiere intervención manual)
+```
+
+**Estados finales de una transacción:**
+
+| Estado | Significado | Próximo paso |
+|---|---|---|
+| `Pending` | Creada, esperando en cola | Consultar nuevamente con GET /payments/{id} |
+| `Processing` | El worker está procesando con el adquirente | Consultar nuevamente en unos segundos |
+| `Approved` | ✅ Pago aprobado exitosamente | Finalizado |
+| `Declined` | ❌ Pago rechazado por el adquirente | Finalizado |
+| `Failed` | ❌ Error de comunicación con el adquirente | Finalizado (requiere reintento manual) |
 
 ## Estructura del Proyecto
+
 
 ```
 PaymentProcessor/
@@ -278,7 +487,7 @@ PaymentProcessor/
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - Azure SQL Server (o SQL Server LocalDB para desarrollo)
-- Un simulador de adquirente (opcional, para probar la integración)
+- [Simulador de adquirente](https://github.com/tu-usuario/acquirer-simulator) — Repositorio aparte que simula un adquirente externo
 
 ### Configuración
 
@@ -288,20 +497,18 @@ PaymentProcessor/
    cd payment-processor/PaymentProcessor
    ```
 
-2. Configurar la cadena de conexión en `appsettings.json`:
+2. Clonar y ejecutar el simulador de adquirente (puerto 5001):
+   ```bash
+   git clone https://github.com/tu-usuario/acquirer-simulator.git
+   cd acquirer-simulator
+   dotnet run --urls "http://localhost:5001"
+   ```
+
+3. Configurar la cadena de conexión en `appsettings.json`:
    ```json
    {
      "ConnectionStrings": {
        "ConnectionData": "Server=localhost;Database=PaymentProcessor;..."
-     }
-   }
-   ```
-
-3. Configurar la URL del adquirente en `appsettings.json`:
-   ```json
-   {
-     "Acquirer": {
-       "BaseUrl": "http://localhost:5001/"
      }
    }
    ```
