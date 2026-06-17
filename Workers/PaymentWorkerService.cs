@@ -1,8 +1,6 @@
 using PaymentProcessor.Channels;
 using PaymentProcessor.Services;
 
-// SOLID (SRP): Responsabilidad única → consumir el canal y orquestar el procesamiento.
-// SOLID (DIP): Depende de abstracciones (IPaymentChannel, IServiceScopeFactory, ILogger).
 public class PaymentWorkerService : BackgroundService
 {
     private readonly IPaymentChannel _channel;
@@ -30,16 +28,15 @@ public class PaymentWorkerService : BackgroundService
             try
             {
                 // Leer del canal de forma asíncrona (Consumer)
-                var transactionId = await _channel.ReadAsync(stoppingToken);
+                Guid transactionId = await _channel.Read(stoppingToken);
 
                 _logger.LogInformation(
                     "Worker recogió transacción {TransactionId} para procesar método {Metodo}",
                     transactionId, metodo);
 
-                // Crear un scope para resolver servicios scoped (DbContext)
-                using var scope = _scopeFactory.CreateScope();
+                using IServiceScope scope = _scopeFactory.CreateScope();
 
-                var acquirerService = scope.ServiceProvider
+                IAcquirerIntegrationService acquirerService = scope.ServiceProvider
                     .GetRequiredService<IAcquirerIntegrationService>();
 
                 await acquirerService.ProcessWithAcquirerAsync(transactionId);

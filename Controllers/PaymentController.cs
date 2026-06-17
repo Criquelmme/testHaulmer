@@ -5,8 +5,7 @@ using PaymentProcessor.Services;
 
 namespace PaymentProcessor.Controllers;
 
-// SOLID (SRP): Responsabilidad única → manejar requests HTTP relacionados a pagos.
-// SOLID (DIP): Depende de abstracciones (IPaymentService, IPaymentQueryService).
+
 [ApiController]
 [Route("payments")]
 public class PaymentController : ControllerBase
@@ -99,7 +98,7 @@ public class PaymentController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PaymentListResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetFiltered(
-        [FromQuery] string merchantId,
+        [FromQuery] string? merchantId,
         [FromQuery] string? status)
     {
         PaymentListResponse result = await _queryService.GetFiltered(merchantId, status);

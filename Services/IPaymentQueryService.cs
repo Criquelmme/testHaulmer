@@ -5,5 +5,5 @@ public interface IPaymentQueryService
 {
     Task<PaymentDetailResponse?> GetById(string transactionId);
 
-    Task<PaymentListResponse> GetFiltered(string merchantId, string? status);
+    Task<PaymentListResponse> GetFiltered(string? merchantId, string? status);
 }

@@ -5,9 +5,6 @@ using PaymentProcessor.Models.Enum;
 
 
 namespace PaymentProcessor.Data;
-
-// SOLID (SRP): Responsabilidad única → operaciones de LECTURA de transacciones.
-// SOLID (DIP): Implementa IPaymentQueryRepository; puede ser reemplazada sin afectar servicios.
 public class PaymentQueryRepository : IPaymentQueryRepository
 {
     private readonly ApplicationDbContext _db;

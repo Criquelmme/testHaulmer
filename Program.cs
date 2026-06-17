@@ -40,9 +40,8 @@ builder.Services.AddHttpClient("AcquirerClient", client =>
 .AddPolicyHandler(GetCircuitBreakerPolicy());
 
 // ──────────────────────────────────────────────
-// Registro de interfaces e implementaciones (DIP)
+// Registro de interfaces e implementaciones
 // ──────────────────────────────────────────────
-// SOLID (DIP): Todas las dependencias se inyectan vía interfaces, no implementaciones concretas.
 builder.Services.AddSingleton<IPaymentChannel, PaymentChannel>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();   // Repositorio (acceso a datos)
 builder.Services.AddScoped<IPaymentService, PaymentService>();         // Servicio de negocio
@@ -96,7 +95,6 @@ app.Run();
 // Políticas de resiliencia
 // ──────────────────────────────────────────────
 
-// SOLID (OCP): Las políticas Polly son extensibles sin modificar el código de negocio.
 static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
 {
     return HttpPolicyExtensions

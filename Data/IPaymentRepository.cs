@@ -2,9 +2,6 @@ using PaymentProcessor.DTOs;
 using PaymentProcessor.Models;
 
 namespace PaymentProcessor.Data;
-
-// SOLID (ISP): Interfaz pequeña y específica para operaciones de base de datos de pagos.
-// SOLID (DIP): Las capas superiores dependen de esta abstracción, no de EF Core directamente.
 public interface IPaymentRepository
 {
     /// <summary>

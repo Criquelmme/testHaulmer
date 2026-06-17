@@ -47,7 +47,7 @@ public class PaymentQueryService : IPaymentQueryService
         };
     }
 
-    public async Task<PaymentListResponse> GetFiltered(string merchantId, string? status)
+    public async Task<PaymentListResponse> GetFiltered(string? merchantId, string? status)
     {
         IQueryable<Transaction> query = _db.Transactions
             .Where(t => t.MerchantId == merchantId)

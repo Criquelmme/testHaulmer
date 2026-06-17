@@ -6,8 +6,7 @@ using PaymentProcessor.Models;
 
 namespace PaymentProcessor.Data;
 
-// SOLID (SRP): Responsabilidad única → operaciones de persistencia de pagos.
-// SOLID (DIP): Implementa IPaymentRepository; puede ser reemplazada sin afectar servicios.
+
 public class PaymentRepository : IPaymentRepository
 {
     private readonly ApplicationDbContext _db;
@@ -27,7 +26,7 @@ public class PaymentRepository : IPaymentRepository
     public async Task<CreatePaymentResponse> CreateTransactionWithIdempotencyAsync(
         Transaction transaction, IdempotencyRecord idempotencyRecord)
     {
-        var strategy = _db.Database.CreateExecutionStrategy();
+        IExecutionStrategy strategy = _db.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
         {

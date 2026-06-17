@@ -51,6 +51,15 @@ public class PaymentService : IPaymentService
             Status = TransactionStatusEnum.Pending
         };
 
+        transaction.Events.Add(new TransactionEvent
+        {
+            TransactionId = transaction.Id,
+            EventType = "PENDING",
+            PreviousStatus = null,
+            NewStatus = TransactionStatusEnum.Pending,
+            CreatedAt = DateTime.UtcNow
+        });
+
         CreatePaymentResponse response = new CreatePaymentResponse
         {
             TransactionId = transaction.Id,
@@ -73,7 +82,7 @@ public class PaymentService : IPaymentService
             transaction.Id, request.MerchantId, metodo, "PENDING");
 
         // Envia ID procsamiento asincrnono
-        await _channel.WriteAsync(transaction.Id);
+        await _channel.Write(transaction.Id);
 
         return response;
     }
