@@ -34,7 +34,6 @@ public class PaymentController : ControllerBase
     /// <returns>202 Accepted con transaction_id, status PENDING y created_at.</returns>
     /// <response code="202">Pago aceptado y en cola para procesamiento.</response>
     /// <response code="400">Datos inválidos.</response>
-    /// <response code="409">Conflicto de idempotencia (ya procesado).</response>
     [HttpPost]
     [ProducesResponseType(typeof(CreatePaymentResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -43,28 +42,20 @@ public class PaymentController : ControllerBase
     {
         string metodo = nameof(CreatePayment);
 
-        var errores = _validator.Validate(request);
+        List<string> errores = _validator.Validate(request);
+
         if (errores.Any())
         {
             return BadRequest(new { errores });
         }
 
-        try
-        {
-            CreatePaymentResponse response = await _paymentService.CreatePayment(request);
+        CreatePaymentResponse response = await _paymentService.CreatePayment(request);
 
+        _logger.LogInformation("Pago {TransactionId} creado con estado {Estado} método {Metodo} evento {Evento}",
+            response.TransactionId, response.Status, metodo, "PAYMENT_CREATED");
 
-            _logger.LogInformation("Pago {TransactionId} creado con estado {Estado} método {Metodo} evento {Evento}",
-                response.TransactionId, response.Status, metodo, "PAYMENT_CREATED");
+        return Accepted(response);
 
-            return Accepted(response);
-        }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("PK__Idempote") == true)
-        {
-            _logger.LogWarning(ex, "Idempotency duplicado para key {IdempotencyKey} método {Metodo} evento {Evento}",
-                request.IdempotencyKey, metodo, "IDEMPOTENCY_CONFLICT");
-            return Conflict(new { error = "Idempotency key existe" });
-        }
     }
 
     /// <summary>

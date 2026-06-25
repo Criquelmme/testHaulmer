@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using PaymentProcessor.Channels;
 using PaymentProcessor.Data;
 using PaymentProcessor.DTOs;
@@ -39,7 +40,7 @@ public class PaymentService : IPaymentService
 
         }
 
-        // Construye entidades
+        // Contruye entidades
         Transaction transaction = new Transaction
         {
             MerchantId = request.MerchantId,
@@ -75,15 +76,35 @@ public class PaymentService : IPaymentService
             CreatedAt = DateTime.UtcNow
         };
 
-        // Persiste transacción 
-        response = await _repo.CreateTransactionWithIdempotencyAsync(transaction, idempotencyRecord);
+        try
+        {
+            response = await _repo.CreateTransactionWithIdempotencyAsync(transaction, idempotencyRecord);
 
-        _logger.LogInformation("Transacción {TransactionId} creada estado PENDING para Merchant {MerchantId} método {Metodo} evento {Evento}",
-            transaction.Id, request.MerchantId, metodo, "PENDING");
+            _logger.LogInformation("Transacción {TransactionId} creada estado PENDING para Merchant {MerchantId} método {Metodo} evento {Evento}",
+                transaction.Id, request.MerchantId, metodo, "PENDING");
 
-        // Envia ID procsamiento asincrnono
-        await _channel.Write(transaction.Id);
+            await _channel.Write(transaction.Id);
 
-        return response;
+            return response;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("PK__Idempote") == true)
+        {
+
+            _logger.LogWarning("Race condition detectada para key {IdempotencyKey}, re-consultando registro existente. método {Metodo} evento {Evento}",
+                request.IdempotencyKey, metodo, "IDEMPOTENCY_RACE_CONDITION");
+
+            existing = await _repo.GetIdempotencyRecordAsync(request.IdempotencyKey);
+
+            if (existing != null)
+            {
+                _logger.LogInformation("Idempotencia recuperada tras race condition para key {IdempotencyKey}, transacción {TransactionId} método {Metodo} evento {Evento}",
+                    request.IdempotencyKey, existing.TransactionId, metodo, "IDEMPOTENCY_HIT_AFTER_RACE");
+
+                return JsonSerializer.Deserialize<CreatePaymentResponse>(existing.ResponseBody)!;
+            }
+
+            _logger.LogError("No se pudo recuperar registro de idempotencia tras race condition para key {IdempotencyKey}", request.IdempotencyKey);
+            throw;
+        }
     }
 }

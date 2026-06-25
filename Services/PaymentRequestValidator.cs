@@ -27,17 +27,17 @@ public class PaymentRequestValidator
                 request.Card.Number.Length < 13 ||
                 request.Card.Number.Length > 19 ||
                 !request.Card.Number.All(char.IsDigit))
-                errores.Add("Card.Number debe tener entre 13 y 19 dígitos numéricos");
+                errores.Add("Card Number debe tener entre 13 y 19 dígitos numéricos");
 
             if (string.IsNullOrWhiteSpace(request.Card.Expiry) ||
                 !System.Text.RegularExpressions.Regex.IsMatch(request.Card.Expiry, @"^(0[1-9]|1[0-2])\/\d{4}$"))
                 errores.Add("Card.Expiry debe tener formato MM/YYYY");
             else
             {
-                var partes = request.Card.Expiry.Split('/');
+                string[] partes = request.Card.Expiry.Split('/');
                 int mes = int.Parse(partes[0]);
                 int anio = int.Parse(partes[1]);
-                var fechaVencimiento = new DateTime(anio, mes, 1).AddMonths(1).AddDays(-1);
+                DateTime fechaVencimiento = new DateTime(anio, mes, 1).AddMonths(1).AddDays(-1);
                 if (fechaVencimiento < DateTime.UtcNow)
                     errores.Add("La tarjeta está vencida");
             }
